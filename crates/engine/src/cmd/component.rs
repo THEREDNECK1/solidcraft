@@ -109,6 +109,12 @@ pub(super) fn valid_position(m: &Mat) -> bool {
 
 pub(super) fn new_component(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "component.create";
+    if let Some(params) = p.as_object()
+        && let Some(key) = params.keys().find(|key| !matches!(key.as_str(), "name" | "parent" | "parent_path" | "activate"))
+    {
+        let hint = if params.contains_key("bodies") { "; use component.move_bodies or component.from_bodies to move bodies" } else { "" };
+        return Err(bad(cmd, format!("unknown parameter `{key}`; accepted parameters: name, parent, parent_path, activate{hint}")));
+    }
     let parent = if p.get("parent").is_some() { component(s, p, "parent", cmd)? } else { s.active_component };
     let parent_path = if let Some(value) = p.get("parent_path") {
         let path = value
@@ -238,31 +244,15 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     if id == 0 {
         return Err(bad(cmd, "the design itself can't be deleted"));
     }
-    let gone: Vec<u64> = s.doc.components.iter().filter(|c| s.doc.component_within(c.id, id)).map(|c| c.id).collect();
-    if s.doc.features.iter().any(|feature| {
-        !gone.contains(&feature.component)
-            && matches!(&feature.kind, FeatureKind::BodyTransfer { from, to, .. } if gone.contains(from) || gone.contains(to))
-    }) {
-        return Err(bad(
-            cmd,
-            "component supplies a recorded body transfer outside this subtree; remove that transfer history before deleting its source",
-        ));
-    }
-    let feats: Vec<u64> = s.doc.features.iter().filter(|f| gone.contains(&f.component)).map(|f| f.id).collect();
-    let d = s.doc_mut();
-    for f in &feats {
-        let _ = d.delete_feature(*f);
-    }
-    d.components.retain(|c| !gone.contains(&c.id));
-    d.remove_configuration_components(&gone);
-    d.occurrences.retain(|o| !gone.contains(&o.component) && !gone.contains(&o.parent));
-    let moved_out: Vec<String> = d.body_components.iter().filter(|(_, c)| gone.contains(c)).map(|(b, _)| b.clone()).collect();
-    d.body_components.retain(|_, c| !gone.contains(c));
-    d.body_offsets.retain(|b, _| !moved_out.contains(b));
+    let removed = s.doc_mut().remove_component_tree(id).map_err(|e| match e {
+        solidcraft_doc::DocError::Invalid(msg) => bad(cmd, msg),
+        e => e.into(),
+    })?;
+    let gone = removed.components;
     if gone.contains(&s.active_component) {
         s.active_component = 0;
     }
-    Ok(json!({"deleted": gone, "features": feats}))
+    Ok(json!({"deleted": gone, "features": removed.features}))
 }
 
 fn unlock(s: &mut Session, p: &Value) -> Result<Value> {

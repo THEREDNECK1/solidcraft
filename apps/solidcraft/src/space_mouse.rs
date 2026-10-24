@@ -284,15 +284,18 @@ fn decode_report(report: &[u8], layout: Layout, reading: &mut Reading, now: Inst
     true
 }
 
-/// Publishes one input report from the device to the egui thread.
+/// Publishes one input report from the device to the egui thread. A report that reads the same as
+/// the reading it replaces is no news — a device may repeat its report at rest — so it asks for no
+/// frame; while the cap moves, the view asks for the next frame itself.
 fn publish(ctx: &Context, shared: &Mutex<Reading>, layout: Layout, report: &[u8]) {
     if DRIVER_CONNECTED.load(Ordering::Relaxed) {
         return;
     }
-    if let Ok(mut reading) = shared.lock()
-        && decode_report(report, layout, &mut reading, Instant::now())
-    {
-        ctx.request_repaint();
+    if let Ok(mut reading) = shared.lock() {
+        let before = reading.axes;
+        if decode_report(report, layout, &mut reading, Instant::now()) && reading.axes != before {
+            ctx.request_repaint();
+        }
     }
 }
 
@@ -886,6 +889,31 @@ mod tests {
         assert_eq!(reading.current(now + STALE_AFTER, Axes::default()).translation, [0; 3]);
     }
 
+    /// A device that repeats its reading at rest asks for no frame; a reading that changes does.
+    #[test]
+    fn a_repeated_report_at_rest_asks_for_no_frame() {
+        let ctx = Context::default();
+        let shared = Mutex::new(Reading::new(Instant::now()));
+        let layout = Layout::default();
+        let frame = || {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+            out.textures_delta.clear();
+        };
+        let asked = || {
+            frame();
+            ctx.repaint_causes().iter().any(|c| c.file.ends_with("space_mouse.rs"))
+        };
+        frame();
+        // Report 1 carries translation (see the split-layout test).
+        let report = [1, 0x9c, 0xff, 0x2c, 0x01, 0, 0];
+        publish(&ctx, &shared, layout, &report);
+        assert!(asked(), "a report that moves the cap asks for a frame");
+        publish(&ctx, &shared, layout, &report);
+        assert!(!asked(), "the same reading at rest is no news");
+        publish(&ctx, &shared, layout, &[1, 0x9d, 0xff, 0x2c, 0x01, 0, 0]);
+        assert!(asked(), "a changed reading asks for a frame");
+    }
+
     #[test]
     fn a_held_reading_stays_until_the_next_one_and_a_hid_reading_goes_stale() {
         let now = Instant::now();
@@ -1023,7 +1051,8 @@ mod tests {
         };
         // A window that has run a frame with focus, as the app's always has by now.
         let ctx = Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+        // Clear the frame's texture changes, or dropping them panics in debug builds (as in #60).
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
         mouse.tick_at(&mut app, &ctx, now);
         let DeviceMotion { motion, seconds } = app.viewport.device_motion.expect("the frame hands the page its motion");
         assert_eq!(motion, Motion { translation: [0.0; 3], rotation: [0.0, 0.0, -1.0] });
