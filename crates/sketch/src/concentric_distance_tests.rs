@@ -1,9 +1,13 @@
+#![cfg(test)]
+
 //! The radial distance between concentric circles or arcs:
 //! solved numerically, measured, and refused on non-round curves or negative values.
 
 use solidcraft_geom::Vec2;
 
-use crate::tests::v;
+fn v(x: f64, y: f64) -> Vec2 {
+    Vec2::new(x, y)
+}
 use crate::*;
 
 fn concentric_circles(centre: Vec2, r1: f64, r2: f64) -> (Sketch, usize, usize, usize) {

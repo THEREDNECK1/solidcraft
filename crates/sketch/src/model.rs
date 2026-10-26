@@ -368,6 +368,7 @@ pub enum ConstraintKind {
         a: usize,
         b: usize,
         value: f64,
+    },
     /// Distance from point `p` to the edge of circle or arc `c`, along the radius through the
     /// point: `|p − centre| − radius` while the point is outside the circle or, `inside`, how
     /// far within the edge it lies, `radius − |p − centre|`. Zero puts the point on the circle.
@@ -528,14 +529,12 @@ impl ConstraintKind {
             Midpoint { .. } => "MidPoint",
             Symmetric { .. } => "Symmetry",
             Fix { .. } => "Fix",
-            Distance { .. } | DistanceX { .. } | DistanceY { .. } | PointLineDistance { .. } | LineCircleDistance { .. } | ConcentricDistance { .. } | Length { .. } => {
-                "LinearDimension"
-            }
             Distance { .. }
             | DistanceX { .. }
             | DistanceY { .. }
             | PointLineDistance { .. }
             | LineCircleDistance { .. }
+            | ConcentricDistance { .. }
             | PointCircleDistance { .. }
             | CircleCircleDistance { .. }
             | Length { .. } => "LinearDimension",
@@ -643,6 +642,9 @@ impl ConstraintKind {
                 fc(c);
             }
             ConcentricDistance { a, b, .. } => {
+                fc(a);
+                fc(b);
+            }
             PointCircleDistance { p, c, .. } => {
                 fp(p);
                 fc(c);
@@ -1101,6 +1103,7 @@ impl Sketch {
                 if a == b {
                     return Err(SketchError::Invalid("two distinct curves are needed".into()));
                 }
+            }
             PointCircleDistance { c, .. } => need_round(c)?,
             CircleCircleDistance { a, b, .. } => {
                 if a == b {

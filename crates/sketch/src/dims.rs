@@ -104,7 +104,7 @@ pub fn dim_frame(sk: &Sketch, k: &ConstraintKind) -> Option<DimFrame> {
             let p0 = a + d * (p1 - a).dot(d);
             DimFrame::Linear { p0, p1, dir: unit(p1 - p0, normal) }
         }
-PointCircleDistance { p, c, .. } => {
+        PointCircleDistance { p, c, .. } => {
             // From the circle's edge, where the radius through the point crosses it, to the point.
             let q = sk.point(p)?;
             let (centre, r) = (sk.center(c)?, sk.radius(c)?);
@@ -145,7 +145,6 @@ PointCircleDistance { p, c, .. } => {
             let p0 = center + u * ra;
             let p1 = center + u * rb;
             DimFrame::Linear { p0, p1, dir: unit(p1 - p0, u) }
-        }
         }
         Radius { c, .. } | Diameter { c, .. } => {
             let (radius, arc) = match sk.curves.get(c)?.kind {
